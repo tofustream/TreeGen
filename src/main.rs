@@ -1,5 +1,6 @@
-use iced::widget::{button, column, container, scrollable, text, text_input};
+use iced::widget::{button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length};
+use rfd::FileDialog; // フォルダ選択ダイアログを使用
 use std::fs;
 use std::path::PathBuf;
 
@@ -13,6 +14,8 @@ struct TreeGen {
 pub enum Message {
     FolderPathChanged(String),  // フォルダパスの変更
     GenerateTree,               // ツリー生成ボタンが押された
+    OpenFolderDialog,           // フォルダ選択ダイアログを開く
+    FolderSelected(Option<PathBuf>), // フォルダが選択された
 }
 
 impl TreeGen {
@@ -26,12 +29,16 @@ impl TreeGen {
         .height(Length::Fill);
 
         let content = column![
-            // フォルダパス入力フィールド
-            text_input("Enter folder path...", &self.folder_path)
-                .padding(10)
-                .width(Length::Fill)
-                .on_input(Message::FolderPathChanged),
-
+            // フォルダパス入力フィールドとBrowseボタンを横に並べる
+            row![
+                text_input("Enter folder path...", &self.folder_path)
+                    .padding(10)
+                    .width(Length::Fill),  // 横幅をFillにしてスペースを利用
+                button("Browse")
+                    .on_press(Message::OpenFolderDialog)  // ボタンの高さはtext_inputに自動で合わせる
+            ]
+            .spacing(10),  // パス入力欄とBrowseボタンの間にスペースを追加
+            
             // ツリー構造を生成するボタン
             button("Generate Tree").on_press(Message::GenerateTree),
 
@@ -62,6 +69,24 @@ impl TreeGen {
                     let tree = generate_tree_structure(&self.folder_path);
                     self.tree_structure = tree.unwrap_or_else(|err| err.to_string());
                 }
+            }
+            Message::OpenFolderDialog => {
+                // フォルダ選択ダイアログを開く
+                let selected_folder = FileDialog::new()
+                    .set_title("フォルダを選択")
+                    .pick_folder();
+
+                // 選択されたフォルダのパスを更新
+                if let Some(path) = selected_folder {
+                    self.update(Message::FolderSelected(Some(path)));
+                }
+            }
+            Message::FolderSelected(Some(path)) => {
+                // 選択されたフォルダパスを保存
+                self.folder_path = path.display().to_string();
+            }
+            Message::FolderSelected(None) => {
+                // フォルダが選択されなかった場合の処理（何もしない）
             }
         }
     }
