@@ -158,4 +158,3 @@ fn generate_tree_recursive(
 fn main() -> iced::Result {
     iced::run("TreeGen", TreeGen::update, TreeGen::view)
 }
-
