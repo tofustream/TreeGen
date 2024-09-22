@@ -1,4 +1,4 @@
-use iced::widget::{button, column, container, text, text_input};
+use iced::widget::{button, column, container, scrollable, text, text_input};
 use iced::{Alignment, Element, Length};
 use std::fs;
 use std::path::PathBuf;
@@ -18,6 +18,13 @@ pub enum Message {
 impl TreeGen {
     // ビューの定義
     pub fn view(&self) -> Element<Message> {
+        let scrollable_tree = scrollable(
+            text(&self.tree_structure)
+                .size(16)
+        )
+        .width(Length::Fill)
+        .height(Length::Fill);
+
         let content = column![
             // フォルダパス入力フィールド
             text_input("Enter folder path...", &self.folder_path)
@@ -28,8 +35,8 @@ impl TreeGen {
             // ツリー構造を生成するボタン
             button("Generate Tree").on_press(Message::GenerateTree),
 
-            // 生成されたツリー構造を表示
-            text(&self.tree_structure).size(16)
+            // スクロール可能なツリー表示領域
+            scrollable_tree
         ]
         .spacing(20)
         .align_x(Alignment::Center);
@@ -54,8 +61,6 @@ impl TreeGen {
                 if !self.folder_path.is_empty() {
                     let tree = generate_tree_structure(&self.folder_path);
                     self.tree_structure = tree.unwrap_or_else(|err| err.to_string());
-                    // コマンドラインにツリーを出力
-                    println!("{}", self.tree_structure);
                 }
             }
         }
