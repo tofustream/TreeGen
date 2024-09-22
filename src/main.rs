@@ -1,8 +1,9 @@
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length};
-use rfd::FileDialog; // フォルダ選択ダイアログを使用
+use rfd::FileDialog;
 use std::fs;
 use std::path::PathBuf;
+use arboard::Clipboard;
 
 #[derive(Default)]
 struct TreeGen {
@@ -16,6 +17,7 @@ pub enum Message {
     GenerateTree,               // ツリー生成ボタンが押された
     OpenFolderDialog,           // フォルダ選択ダイアログを開く
     FolderSelected(Option<PathBuf>), // フォルダが選択された
+    CopyToClipboard,            // クリップボードにコピー
 }
 
 impl TreeGen {
@@ -43,7 +45,10 @@ impl TreeGen {
             button("Generate Tree").on_press(Message::GenerateTree),
 
             // スクロール可能なツリー表示領域
-            scrollable_tree
+            scrollable_tree,
+
+            // クリップボードにコピーするボタン
+            button("Copy to Clipboard").on_press(Message::CopyToClipboard)
         ]
         .spacing(20)
         .align_x(Alignment::Center);
@@ -87,6 +92,11 @@ impl TreeGen {
             }
             Message::FolderSelected(None) => {
                 // フォルダが選択されなかった場合の処理（何もしない）
+            }
+            Message::CopyToClipboard => {
+                // arboard::Clipboardを使用してクリップボードにツリー構造を書き込む
+                let mut clipboard = Clipboard::new().unwrap();
+                clipboard.set_text(self.tree_structure.clone()).unwrap();
             }
         }
     }
@@ -148,3 +158,4 @@ fn generate_tree_recursive(
 fn main() -> iced::Result {
     iced::run("TreeGen", TreeGen::update, TreeGen::view)
 }
+
