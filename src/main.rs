@@ -1,4 +1,4 @@
-use iced::widget::{button, column, container, row, scrollable, text, text_input};
+use iced::widget::{button, checkbox, column, container, row, scrollable, text_input, text};
 use iced::{Alignment, Element, Length};
 use rfd::FileDialog;
 use std::fs;
@@ -7,53 +7,102 @@ use arboard::Clipboard;
 
 #[derive(Default)]
 struct TreeGen {
-    folder_path: String,      // ユーザーが入力したフォルダパス
-    tree_structure: String,   // 生成されたフォルダツリー
+    folder_path: String,
+    root: Option<TreeNode>, // フォルダツリー全体を保持
+    show_modal: bool,       // モーダルを表示するかどうか
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    FolderPathChanged(String),  // フォルダパスの変更
-    GenerateTree,               // ツリー生成ボタンが押された
-    OpenFolderDialog,           // フォルダ選択ダイアログを開く
-    FolderSelected(Option<PathBuf>), // フォルダが選択された
-    CopyToClipboard,            // クリップボードにコピー
+    FolderPathChanged(String),
+    OpenFolderDialog,
+    FolderSelected(Option<PathBuf>),
+    FilterChanged(usize, bool),  // ノードのインデックスとチェック状態
+    ShowModal(bool),
+    ModalSelectionComplete,
+    CopyToClipboard,
+    AnalyzeTree,
+}
+
+#[derive(Debug, Clone)]
+struct TreeNode {
+    name: String,
+    is_checked: bool,
+    children: Vec<TreeNode>,
+}
+
+impl TreeNode {
+    // 全ての子要素に対してチェックを伝播させる関数
+    fn set_checked_recursive(&mut self, is_checked: bool) {
+        self.is_checked = is_checked;
+        for child in &mut self.children {
+            child.set_checked_recursive(is_checked);
+        }
+    }
+
+    // ノードから文字列を生成する（表示用）
+    fn to_string_recursive(&self, depth: usize, is_last: bool, parent_is_last: &[bool]) -> String {
+        let mut result = String::new();
+
+        // 各階層に対するインデントを適切に追加
+        for &is_parent_last in parent_is_last {
+            result.push_str(if is_parent_last { "    " } else { "|   " });
+        }
+
+        result.push_str(if is_last { "|__ " } else { "|-- " });
+        result.push_str(&self.name);
+        result.push('\n');
+
+        let len = self.children.len();
+        for (i, child) in self.children.iter().enumerate() {
+            let is_last_child = i == len - 1;
+            // 再帰的に子ノードの文字列を生成（親の状態を引き継ぐ）
+            result.push_str(&child.to_string_recursive(depth + 1, is_last_child, &[parent_is_last, &[is_last]].concat()));
+        }
+
+        result
+    }
 }
 
 impl TreeGen {
-    // ビューの定義
     pub fn view(&self) -> Element<Message> {
-        let scrollable_tree = scrollable(
-            text(&self.tree_structure)
-                .size(16)
-        )
-        .width(Length::Fill)
-        .height(Length::Fill);
-
         let content = column![
-            // フォルダパス入力フィールドとBrowseボタンを横に並べる
             row![
                 text_input("Enter folder path...", &self.folder_path)
                     .padding(10)
-                    .width(Length::Fill),  // 横幅をFillにしてスペースを利用
-                button("Browse")
-                    .on_press(Message::OpenFolderDialog)  // ボタンの高さはtext_inputに自動で合わせる
+                    .width(Length::Fill)
+                    .on_input(Message::FolderPathChanged),
+                button("Browse").on_press(Message::OpenFolderDialog)
             ]
-            .spacing(10),  // パス入力欄とBrowseボタンの間にスペースを追加
-            
-            // ツリー構造を生成するボタン
-            button("Generate Tree").on_press(Message::GenerateTree),
+            .spacing(10),
 
-            // スクロール可能なツリー表示領域
-            scrollable_tree,
+            button("Analyze").on_press(Message::AnalyzeTree),
 
-            // クリップボードにコピーするボタン
+            // ツリー表示
+            if let Some(root) = &self.root {
+                let tree_text = root.to_string_recursive(0, true, &[]); // 修正箇所: is_lastを追加
+                scrollable(text(tree_text))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+            } else {
+                scrollable(column![]).width(Length::Fill).height(Length::Fill)
+            },
+
             button("Copy to Clipboard").on_press(Message::CopyToClipboard)
         ]
         .spacing(20)
         .align_x(Alignment::Center);
 
-        // 全体を中央に配置
+        if self.show_modal {
+            let modal_content = self.modal_view();
+            return container(modal_content)
+                .padding(20)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(Alignment::Center)
+                .into();
+        }
+
         container(content)
             .padding(20)
             .width(Length::Fill)
@@ -62,99 +111,109 @@ impl TreeGen {
             .into()
     }
 
-    // 更新処理の定義
+    fn modal_view(&self) -> Element<Message> {
+        let mut nodes = Vec::new();
+        if let Some(root) = &self.root {
+            for (index, node) in root.children.iter().enumerate() {
+                nodes.push(self.node_view(node, index));
+            }
+        }
+
+        column![
+            scrollable(column(nodes).spacing(10)),
+            button("OK").on_press(Message::ModalSelectionComplete),
+            button("Close").on_press(Message::ShowModal(false))
+        ]
+        .spacing(20)
+        .align_x(Alignment::Center)
+        .into()
+    }
+
+    fn node_view<'a>(&self, node: &'a TreeNode, depth: usize) -> Element<'a, Message> {
+        column![
+            row![
+                checkbox("", node.is_checked).on_toggle(move |is_checked| Message::FilterChanged(depth, is_checked)),
+                text(&node.name)
+            ],
+            column(node.children.iter().enumerate().map(|(_i, child)| self.node_view(child, depth + 1)).collect::<Vec<_>>())
+        ]
+        .into()
+    }
+
     pub fn update(&mut self, message: Message) {
         match message {
             Message::FolderPathChanged(new_path) => {
                 self.folder_path = new_path;
             }
-            Message::GenerateTree => {
-                // フォルダツリーを生成
-                if !self.folder_path.is_empty() {
-                    let tree = generate_tree_structure(&self.folder_path);
-                    self.tree_structure = tree.unwrap_or_else(|err| err.to_string());
-                }
-            }
             Message::OpenFolderDialog => {
-                // フォルダ選択ダイアログを開く
                 let selected_folder = FileDialog::new()
-                    .set_title("フォルダを選択")
+                    .set_title("Browse")
                     .pick_folder();
 
-                // 選択されたフォルダのパスを更新
                 if let Some(path) = selected_folder {
-                    self.update(Message::FolderSelected(Some(path)));
+                    self.folder_path = path.display().to_string();
                 }
             }
-            Message::FolderSelected(Some(path)) => {
-                // 選択されたフォルダパスを保存
-                self.folder_path = path.display().to_string();
+            Message::AnalyzeTree => {
+                let tree = self.generate_tree_structure();
+                self.root = tree.ok();
+                self.show_modal = true;
             }
-            Message::FolderSelected(None) => {
-                // フォルダが選択されなかった場合の処理（何もしない）
+            Message::FilterChanged(index, is_checked) => {
+                if let Some(root) = self.root.as_mut() {
+                    TreeGen::update_tree_checked(root, index, is_checked);
+                }
+            }
+            Message::ShowModal(show) => {
+                self.show_modal = show;
+            }
+            Message::ModalSelectionComplete => {
+                self.show_modal = false;
             }
             Message::CopyToClipboard => {
-                // arboard::Clipboardを使用してクリップボードにツリー構造を書き込む
-                let mut clipboard = Clipboard::new().unwrap();
-                clipboard.set_text(self.tree_structure.clone()).unwrap();
+                if let Some(root) = &self.root {
+                    let mut clipboard = Clipboard::new().unwrap();
+                    clipboard.set_text(root.to_string_recursive(0, true, &[])).unwrap();
+                }
+            }
+            // 未処理だったFolderSelectedを追加
+            Message::FolderSelected(_) => {
+                // フォルダ選択時の処理、特に何もしないなら空のブロックを追加
             }
         }
     }
-}
 
-// フォルダツリーを再帰的に生成する関数
-fn generate_tree_structure(root: &str) -> Result<String, std::io::Error> {
-    let mut result = String::new();
-    let root_path = PathBuf::from(root);
-    generate_tree_recursive(&root_path, 0, &mut result, &mut Vec::new())?;
-    Ok(result)
+    fn update_tree_checked(node: &mut TreeNode, _depth: usize, is_checked: bool) {
+        node.set_checked_recursive(is_checked);
+    }
+
+    fn generate_tree_structure(&self) -> Result<TreeNode, std::io::Error> {
+        let root_path = PathBuf::from(&self.folder_path);
+        let root_node = generate_tree_recursive(&root_path)?;
+        Ok(root_node)
+    }
 }
 
 // 再帰的にフォルダツリーを構築する関数
-fn generate_tree_recursive(
-    path: &PathBuf,
-    depth: usize,
-    result: &mut String,
-    is_last_stack: &mut Vec<bool>
-) -> std::io::Result<()> {
+fn generate_tree_recursive(path: &PathBuf) -> std::io::Result<TreeNode> {
+    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let mut node = TreeNode {
+        name,
+        is_checked: true, // デフォルトでは全て選択された状態
+        children: Vec::new(),
+    };
+
     if path.is_dir() {
-        let entries: Vec<_> = fs::read_dir(path)?.collect();
-        let entries_len = entries.len();
-        for (i, entry) in entries.into_iter().enumerate() {
+        for entry in fs::read_dir(path)? {
             let entry = entry?;
-            let entry_path = entry.path();
-            let entry_name = entry.file_name().into_string().unwrap_or_default();
-
-            // インデントを深さに応じて追加
-            for &is_last in is_last_stack.iter() {
-                if is_last {
-                    result.push_str("    ");
-                } else {
-                    result.push_str("|   ");
-                }
-            }
-
-            if i == entries_len - 1 {
-                result.push_str("|__ ");
-                is_last_stack.push(true);
-            } else {
-                result.push_str("|-- ");
-                is_last_stack.push(false);
-            }
-
-            result.push_str(&format!("{}\n", entry_name));
-
-            if entry_path.is_dir() {
-                generate_tree_recursive(&entry_path, depth + 1, result, is_last_stack)?;
-            }
-
-            is_last_stack.pop();
+            let child_node = generate_tree_recursive(&entry.path())?;
+            node.children.push(child_node);
         }
     }
-    Ok(())
+
+    Ok(node)
 }
 
-// メイン関数
 fn main() -> iced::Result {
     iced::run("TreeGen", TreeGen::update, TreeGen::view)
 }
