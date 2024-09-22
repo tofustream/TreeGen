@@ -1,119 +1,125 @@
-use iced::widget::{button, checkbox, column, container, text, row};
+use iced::widget::{button, column, container, scrollable, text, text_input};
 use iced::{Alignment, Element, Length};
 use std::fs;
+use std::path::PathBuf;
 
 #[derive(Default)]
-struct FolderTree {
-    folders: Vec<Folder>,
-    show_hidden: bool,    // 隠しファイルの表示/非表示
+struct TreeGen {
+    folder_path: String,      // ユーザーが入力したフォルダパス
+    tree_structure: String,   // 生成されたフォルダツリー
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    ToggleHidden(bool),   // 隠しファイル表示切り替え
-    RefreshTree,          // フォルダツリーのリフレッシュ
+    FolderPathChanged(String),  // フォルダパスの変更
+    GenerateTree,               // ツリー生成ボタンが押された
 }
 
-#[derive(Debug, Clone)]
-struct Folder {
-    name: String,
-    files: Vec<String>,
-}
-
-impl FolderTree {
-    // フォルダツリーを表示するためのビュー
+impl TreeGen {
+    // ビューの定義
     pub fn view(&self) -> Element<Message> {
-        // フォルダリストを表示
-        let folder_list = self.folders.iter().fold(column![], |col, folder| {
-            col.push(
-                column![
-                    text(&folder.name).size(20),
-                    folder.files.iter().fold(column![], |file_col, file| {
-                        file_col.push(text(file))
-                    }),
-                ]
-                .spacing(10),
-            )
-        });
+        let scrollable_tree = scrollable(
+            text(&self.tree_structure)
+                .size(16)
+        )
+        .width(Length::Fill)
+        .height(Length::Fill);
 
-        // UIコンテンツを構築
         let content = column![
-            row![
-                checkbox("Show hidden files", self.show_hidden)
-                    .on_toggle(Message::ToggleHidden),
-                button("Refresh Tree").on_press(Message::RefreshTree)
-            ]
-            .spacing(20),
-            folder_list
+            // フォルダパス入力フィールド
+            text_input("Enter folder path...", &self.folder_path)
+                .padding(10)
+                .width(Length::Fill)
+                .on_input(Message::FolderPathChanged),
+
+            // ツリー構造を生成するボタン
+            button("Generate Tree").on_press(Message::GenerateTree),
+
+            // スクロール可能なツリー表示領域
+            scrollable_tree
         ]
         .spacing(20)
         .align_x(Alignment::Center);
 
-        // コンテナで中央に配置
+        // 全体を中央に配置
         container(content)
-            .padding(10)
+            .padding(20)
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(Alignment::Center)
-            .align_y(Alignment::Center)
             .into()
     }
 
-    // メッセージに基づいて状態を更新
+    // 更新処理の定義
     pub fn update(&mut self, message: Message) {
         match message {
-            Message::ToggleHidden(show) => {
-                self.show_hidden = show;
-                self.folders = generate_folder_tree(self.show_hidden); // フォルダツリーを更新
+            Message::FolderPathChanged(new_path) => {
+                self.folder_path = new_path;
             }
-            Message::RefreshTree => {
-                self.folders = generate_folder_tree(self.show_hidden); // フォルダツリーを再生成
-            }
-        }
-    }
-}
-
-// フォルダツリーを再帰的に生成
-fn generate_folder_tree(show_hidden: bool) -> Vec<Folder> {
-    let root = "."; // 現在のディレクトリ
-    let mut folders = Vec::new();
-
-    if let Ok(entries) = fs::read_dir(root) {
-        for entry in entries {
-            if let Ok(entry) = entry {
-                let path = entry.path();
-                if path.is_dir() {
-                    let folder_name = path.file_name().unwrap().to_str().unwrap().to_string();
-                    if show_hidden || !folder_name.starts_with('.') {
-                        let files = read_files_in_folder(&path);
-                        folders.push(Folder {
-                            name: folder_name,
-                            files,
-                        });
-                    }
+            Message::GenerateTree => {
+                // フォルダツリーを生成
+                if !self.folder_path.is_empty() {
+                    let tree = generate_tree_structure(&self.folder_path);
+                    self.tree_structure = tree.unwrap_or_else(|err| err.to_string());
                 }
             }
         }
     }
-    folders
 }
 
-// フォルダ内のファイルを取得
-fn read_files_in_folder(path: &std::path::Path) -> Vec<String> {
-    let mut files = Vec::new();
+// フォルダツリーを再帰的に生成する関数
+fn generate_tree_structure(root: &str) -> Result<String, std::io::Error> {
+    let mut result = String::new();
+    let root_path = PathBuf::from(root);
+    generate_tree_recursive(&root_path, 0, &mut result, &mut Vec::new())?;
+    Ok(result)
+}
 
-    if let Ok(entries) = fs::read_dir(path) {
-        for entry in entries {
-            if let Ok(entry) = entry {
-                let file_name = entry.file_name().into_string().unwrap();
-                files.push(file_name);
+// 再帰的にフォルダツリーを構築する関数
+fn generate_tree_recursive(
+    path: &PathBuf,
+    depth: usize,
+    result: &mut String,
+    is_last_stack: &mut Vec<bool>
+) -> std::io::Result<()> {
+    if path.is_dir() {
+        let entries: Vec<_> = fs::read_dir(path)?.collect();
+        let entries_len = entries.len();
+        for (i, entry) in entries.into_iter().enumerate() {
+            let entry = entry?;
+            let entry_path = entry.path();
+            let entry_name = entry.file_name().into_string().unwrap_or_default();
+
+            // インデントを深さに応じて追加
+            for &is_last in is_last_stack.iter() {
+                if is_last {
+                    result.push_str("    ");
+                } else {
+                    result.push_str("|   ");
+                }
             }
+
+            if i == entries_len - 1 {
+                result.push_str("|__ ");
+                is_last_stack.push(true);
+            } else {
+                result.push_str("|-- ");
+                is_last_stack.push(false);
+            }
+
+            result.push_str(&format!("{}\n", entry_name));
+
+            if entry_path.is_dir() {
+                generate_tree_recursive(&entry_path, depth + 1, result, is_last_stack)?;
+            }
+
+            is_last_stack.pop();
         }
     }
-    files
+    Ok(())
 }
 
 // メイン関数
 fn main() -> iced::Result {
-    iced::run("Folder Tree Generator", FolderTree::update, FolderTree::view)
+    iced::run("TreeGen", TreeGen::update, TreeGen::view)
 }
