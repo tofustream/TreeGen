@@ -142,7 +142,7 @@ impl TreeGen {
     // フィルタリング用のモーダルを描画
     fn filter_modal_view(&self) -> Element<Message> {
         let filter_content = column![
-            text("Filter your Tree"),
+            text("Filter your Tree").size(30),
             // フィルタリングツリーの表示
             if let Some(filter_root) = &self.filter_root {
                 scrollable(self.render_filter_tree_view(filter_root))
@@ -155,6 +155,7 @@ impl TreeGen {
                 button("OK").on_press(Message::ApplyFilter),
                 button("Cancel").on_press(Message::ShowFilterModal(false)) // キャンセルボタンでモーダルを閉じる
             ]
+            .spacing(20)
         ]
         .spacing(20)
         .align_x(Alignment::Center);
