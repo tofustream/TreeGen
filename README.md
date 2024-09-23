@@ -1,6 +1,6 @@
 # TreeGen
 
-A simple directory tree generator built with [iced-rs](https://github.com/iced-rs/iced).
+A simple directory tree generator built with [iced](https://github.com/iced-rs/iced).
 
 ![TreeGen_MainForm](https://github.com/user-attachments/assets/e5e8fe06-2d53-4d90-a8c3-dffebe19610d)
 
