@@ -9,8 +9,8 @@ use uuid::Uuid;
 #[derive(Default)]
 struct TreeGen {
     folder_path: String,
-    root: Option<TreeNode>,       // フォルダツリー全体を保持
-    show_filter_modal: bool,      // フィルターモーダルを表示するかどうか
+    root: Option<TreeNode>, // フォルダツリー全体を保持
+    show_filter_modal: bool, // フィルターモーダルを表示するかどうか
     filter_root: Option<TreeNode>, // フィルタリング用のツリー
 }
 
@@ -19,15 +19,15 @@ pub enum Message {
     FolderPathChanged(String),
     OpenFolderDialog,
     FolderSelected(Option<PathBuf>),
-    ApplyFilter,  // フィルタリングを適用
+    ApplyFilter, // フィルタリングを適用
     ToggleNodeCheck(Uuid, bool), // ノードのUUIDとチェック状態
-    ShowFilterModal(bool),  // フィルタモーダルの表示/非表示を切り替える
+    ShowFilterModal(bool), // フィルタモーダルの表示/非表示を切り替える
     CopyToClipboard,
 }
 
 #[derive(Debug, Clone)]
 struct TreeNode {
-    id: Uuid,       // 各ノードに一意のIDを付与
+    id: Uuid, // 各ノードに一意のIDを付与
     name: String,
     is_checked: bool,
     children: Vec<TreeNode>,
@@ -54,16 +54,17 @@ impl TreeNode {
     }
 
     // チェックされたノードのみを再帰的にツリーとして表示する関数
-    fn to_string_recursive(&self, depth: usize, parent_is_last: &[bool]) -> String {
+    fn to_string_recursive(&self, depth: usize, is_last: bool, parent_is_last: &[bool]) -> String {
         let mut result = String::new();
 
         // 各階層に対するインデントを適切に追加
-        for &is_parent_last in parent_is_last {
-            result.push_str(if is_parent_last { "    " } else { "|   " });
+        if depth > 0 {
+            for &is_parent_last in parent_is_last.iter().take(depth - 1) {
+                result.push_str(if is_parent_last { "    " } else { "|   " });
+            }
+            result.push_str(if is_last { "|__ " } else { "|-- " });
         }
 
-        // ノード名の表示
-        result.push_str(if depth == 0 { "" } else { "|__ " });
         result.push_str(&self.name);
         result.push('\n');
 
@@ -72,6 +73,7 @@ impl TreeNode {
             let is_last_child = i == len - 1;
             result.push_str(&child.to_string_recursive(
                 depth + 1,
+                is_last_child,
                 &[parent_is_last, &[is_last_child]].concat(),
             ));
         }
@@ -81,9 +83,9 @@ impl TreeNode {
 
     // フィルタを適用する関数
     fn apply_filter(&mut self) {
-        self.children.retain(|child| child.is_checked);  // チェックされている子だけ残す
+        self.children.retain(|child| child.is_checked); // チェックされている子だけ残す
         for child in &mut self.children {
-            child.apply_filter();  // 再帰的にフィルタを適用
+            child.apply_filter(); // 再帰的にフィルタを適用
         }
     }
 }
@@ -102,7 +104,7 @@ impl TreeGen {
             button("Filter").on_press(Message::ShowFilterModal(true)), // フィルタモーダルを表示
             // パスが入力されたらツリー表示
             if let Some(root) = &self.root {
-                let tree_text = root.to_string_recursive(0, &[]);
+                let tree_text = root.to_string_recursive(0, true, &[]);
                 scrollable(text(tree_text))
                     .width(Length::Fill)
                     .height(Length::Fill)
@@ -151,7 +153,7 @@ impl TreeGen {
             },
             row![
                 button("OK").on_press(Message::ApplyFilter),
-                button("Cancel").on_press(Message::ShowFilterModal(false))  // キャンセルボタンでモーダルを閉じる
+                button("Cancel").on_press(Message::ShowFilterModal(false)) // キャンセルボタンでモーダルを閉じる
             ]
         ]
         .spacing(20)
@@ -198,7 +200,7 @@ impl TreeGen {
                     self.folder_path = path.display().to_string();
                     let tree = self.generate_tree_structure();
                     self.root = tree.ok();
-                    self.filter_root = self.root.clone();  // フィルタリング用にコピー
+                    self.filter_root = self.root.clone(); // フィルタリング用にコピー
                 }
             }
             Message::ToggleNodeCheck(node_id, is_checked) => {
@@ -210,10 +212,10 @@ impl TreeGen {
             Message::ApplyFilter => {
                 // フィルタ適用処理
                 if let Some(filter_root) = &mut self.filter_root {
-                    filter_root.apply_filter();  // チェックされた項目のみ保持
-                    self.root = Some(filter_root.clone());  // フィルタ結果を反映
+                    filter_root.apply_filter(); // チェックされた項目のみ保持
+                    self.root = Some(filter_root.clone()); // フィルタ結果を反映
                 }
-                self.show_filter_modal = false;  // フィルタリングが終わったらモーダルを閉じる
+                self.show_filter_modal = false; // フィルタリングが終わったらモーダルを閉じる
             }
             Message::ShowFilterModal(show) => {
                 self.show_filter_modal = show;
@@ -222,7 +224,7 @@ impl TreeGen {
                 if let Some(root) = &self.root {
                     let mut clipboard = Clipboard::new().unwrap();
                     clipboard
-                        .set_text(root.to_string_recursive(0, &[]))
+                        .set_text(root.to_string_recursive(0, true, &[]))
                         .unwrap();
                 }
             }
@@ -248,7 +250,7 @@ fn generate_tree_recursive(path: &PathBuf) -> std::io::Result<TreeNode> {
         .to_string_lossy()
         .to_string();
     let mut node = TreeNode {
-        id: Uuid::new_v4(),  // 一意のUUIDを生成
+        id: Uuid::new_v4(), // 一意のUUIDを生成
         name,
         is_checked: true, // デフォルトでは全てチェックされた状態
         children: Vec::new(),
