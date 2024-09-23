@@ -49,6 +49,6 @@ Here is an example of what the generated tree might look like:
 Example
 |-- .DS_Store
 |-- ex_dir
-| |__ ex1.txt
+|   |__ ex1.txt
 |__ ex2.txt
 ```
