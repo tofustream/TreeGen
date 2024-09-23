@@ -155,9 +155,6 @@ impl TreeGen {
                         .unwrap();
                 }
             }
-            // Message::FolderSelected(_) => {
-            //     // フォルダ選択時の処理
-            // }
         }
     }
 
