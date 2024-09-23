@@ -7,3 +7,4 @@ edition = "2021"
 arboard = "3.4.1"
 iced = "0.13.1"
 rfd = "0.15.0"
+uuid = { version = "1.10", features = ["v4"] }
